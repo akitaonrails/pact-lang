@@ -1,0 +1,99 @@
+;; Authentication service — demonstrates token-based auth with
+;; multiple effect sets, expiration handling, and role-based access.
+
+(module auth-service
+  :provenance {req: "SPEC-2024-0100", author: "agent:claude-v4", created: "2026-02-09T16:00:00Z"}
+  :version 3
+  :parent-version 2
+  :delta (added-fn refresh-token "support token refresh without re-authentication")
+
+  (type Session
+    :invariants [(> (strlen token) 0) (> expires-at 0)]
+    (field id         UUID   :immutable :generated)
+    (field user-id    UUID   :immutable)
+    (field token      String :min-len 32 :max-len 256)
+    (field role       String)
+    (field expires-at Int)
+    (field created-at Int    :immutable :generated))
+
+  (type Credentials
+    (field username String :min-len 1 :max-len 100)
+    (field password String :min-len 8))
+
+  (effect-set session-read  [:reads session-store])
+  (effect-set session-write [:writes session-store :reads session-store])
+  (effect-set user-lookup   [:reads user-store])
+  (effect-set audit-log     [:writes audit-store])
+
+  (fn authenticate
+    :provenance {req: "SPEC-2024-0100#auth", test: ["T-200" "T-201" "T-202" "T-203"]}
+    :effects    [user-lookup session-write audit-log]
+    :total      true
+    :latency-budget 500ms
+
+    (param creds Credentials
+      :source http-body
+      :content-type :json
+      :validated-at boundary)
+
+    (returns (union
+      (ok   Session :http 200 :serialize :json)
+      (err  :invalid-credentials {} :http 401)
+      (err  :account-locked {} :http 403)
+      (err  :validation-failed (list ValidationError) :http 422)))
+
+    (let [user (query user-store {:username (. creds username)})]
+      (match user
+        (none)   (err :invalid-credentials {})
+        (some u) (if (check-locked u)
+                   (err :account-locked {})
+                   (match (verify-password (. creds password) (. u password-hash))
+                     (ok _)  (let [session (create-session! session-store u)]
+                               (ok session))
+                     (err _) (err :invalid-credentials {}))))))
+
+  (fn validate-token
+    :provenance {req: "SPEC-2024-0100#validate", test: ["T-210" "T-211"]}
+    :effects    [session-read]
+    :total      true
+    :latency-budget 10ms
+    :called-by  [api-gateway/middleware]
+
+    (param token String
+      :source http-header
+      :validated-at boundary)
+
+    (returns (union
+      (ok   Session :http 200)
+      (err  :expired {} :http 401)
+      (err  :invalid-token {} :http 401)))
+
+    (let [session (query session-store {:token token})]
+      (match session
+        (none)   (err :invalid-token {})
+        (some s) (if (token-expired? s)
+                   (err :expired {})
+                   (ok s)))))
+
+  (fn refresh-token
+    :provenance {req: "SPEC-2024-0100#refresh", test: ["T-220" "T-221"]}
+    :effects    [session-read session-write]
+    :total      true
+    :latency-budget 100ms
+
+    (param token String
+      :source http-body
+      :validated-at boundary)
+
+    (returns (union
+      (ok   Session :http 200 :serialize :json)
+      (err  :expired {} :http 401)
+      (err  :invalid-token {} :http 401)))
+
+    (let [session (query session-store {:token token})]
+      (match session
+        (none)   (err :invalid-token {})
+        (some s) (if (token-expired? s)
+                   (err :expired {})
+                   (let [new-session (rotate-token! session-store s)]
+                     (ok new-session)))))))

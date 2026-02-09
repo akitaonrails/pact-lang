@@ -1,0 +1,23 @@
+;; Minimal example — the smallest valid AIS module.
+;; Good starting point for understanding the language.
+
+(module hello
+  :version 1
+
+  (type Greeting
+    (field message String :min-len 1 :max-len 500))
+
+  (effect-set db-read [:reads greeting-store])
+
+  (fn greet
+    :effects [db-read]
+    :total   true
+    :latency-budget 10ms
+
+    (param name String
+      :source http-path-param)
+
+    (returns (union
+      (ok Greeting :http 200 :serialize :json)))
+
+    (ok (build Greeting {:message name}))))

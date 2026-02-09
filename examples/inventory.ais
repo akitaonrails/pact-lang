@@ -1,0 +1,96 @@
+;; Inventory management service — demonstrates multiple types,
+;; cross-type references, quantity constraints, and write-heavy effects.
+
+(module inventory
+  :provenance {req: "SPEC-2024-0200", author: "agent:claude-v4", created: "2026-02-09T18:00:00Z"}
+  :version 1
+
+  (type Product
+    :invariants [(> (strlen name) 0) (>= price 0)]
+    (field id    UUID   :immutable :generated)
+    (field name  String :min-len 1 :max-len 500)
+    (field sku   String :min-len 3 :max-len 50)
+    (field price Int)
+    (field active Bool))
+
+  (type StockEntry
+    :invariants [(>= quantity 0)]
+    (field id          UUID :immutable :generated)
+    (field product-id  UUID :immutable)
+    (field warehouse   String)
+    (field quantity    Int)
+    (field reserved    Int)
+    (field updated-at  Int  :generated))
+
+  (type Reservation
+    (field id          UUID   :immutable :generated)
+    (field product-id  UUID   :immutable)
+    (field quantity    Int)
+    (field order-id    UUID   :immutable)
+    (field expires-at  Int))
+
+  (effect-set product-read  [:reads product-store])
+  (effect-set stock-read    [:reads stock-store])
+  (effect-set stock-write   [:writes stock-store :reads stock-store])
+  (effect-set reserve-write [:writes reservation-store :reads reservation-store])
+
+  (fn check-availability
+    :provenance {req: "SPEC-2024-0200#availability", test: ["T-300" "T-301"]}
+    :effects    [product-read stock-read]
+    :total      true
+    :latency-budget 30ms
+    :called-by  [cart-service/add-item storefront/product-page]
+
+    (param product-id UUID
+      :source http-path-param
+      :validated-at boundary)
+
+    (returns (union
+      (ok   StockEntry :http 200 :serialize :json)
+      (err  :product-not-found {} :http 404)
+      (err  :out-of-stock {:product-id product-id} :http 200)))
+
+    (let [product (query product-store {:id product-id})]
+      (match product
+        (none)   (err :product-not-found {})
+        (some p) (let [stock (query stock-store {:product-id (. p id)})]
+                   (match stock
+                     (none)   (err :out-of-stock {:product-id product-id})
+                     (some s) (if (> (. s quantity) (. s reserved))
+                                (ok s)
+                                (err :out-of-stock {:product-id product-id})))))))
+
+  (fn reserve-stock
+    :provenance {req: "SPEC-2024-0200#reserve", test: ["T-310" "T-311" "T-312"]}
+    :effects    [stock-read stock-write reserve-write]
+    :total      true
+    :latency-budget 200ms
+
+    (param product-id UUID
+      :source http-body
+      :validated-at boundary)
+
+    (param quantity Int
+      :source http-body
+      :validated-at boundary)
+
+    (param order-id UUID
+      :source http-body
+      :validated-at boundary)
+
+    (returns (union
+      (ok   Reservation :http 201 :serialize :json)
+      (err  :insufficient-stock {:available Int} :http 409)
+      (err  :product-not-found {} :http 404)))
+
+    (let [stock (query stock-store {:product-id product-id})]
+      (match stock
+        (none)   (err :product-not-found {})
+        (some s) (let [available (- (. s quantity) (. s reserved))]
+                   (if (>= available quantity)
+                     (let [reservation (insert! reservation-store
+                             (build Reservation {:product-id product-id
+                                                 :quantity quantity
+                                                 :order-id order-id}))]
+                       (ok reservation))
+                     (err :insufficient-stock {:available available})))))))

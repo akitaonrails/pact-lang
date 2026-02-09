@@ -1,0 +1,85 @@
+;; Notification service — demonstrates send effects,
+;; multiple delivery channels, and template rendering.
+
+(module notification-service
+  :provenance {req: "SPEC-2024-0300", author: "agent:claude-v4", created: "2026-02-09T19:00:00Z"}
+  :version 2
+  :parent-version 1
+  :delta (added-fn send-batch "support batch notification delivery")
+
+  (type Notification
+    (field id         UUID   :immutable :generated)
+    (field recipient  String :min-len 1)
+    (field channel    String)
+    (field subject    String :max-len 200)
+    (field body       String :max-len 10000)
+    (field status     String)
+    (field sent-at    Int    :generated))
+
+  (type Template
+    (field id   UUID   :immutable :generated)
+    (field name String :min-len 1 :max-len 100)
+    (field body String :min-len 1))
+
+  (effect-set template-read [:reads template-store])
+  (effect-set notif-write   [:writes notification-store :reads notification-store])
+  (effect-set email-send    [:sends email-gateway])
+  (effect-set sms-send      [:sends sms-gateway])
+
+  (fn send-notification
+    :provenance {req: "SPEC-2024-0300#send", test: ["T-400" "T-401" "T-402"]}
+    :effects    [template-read notif-write email-send]
+    :total      true
+    :latency-budget 2000ms
+
+    (param recipient String
+      :source http-body
+      :validated-at boundary)
+
+    (param template-name String
+      :source http-body
+      :validated-at boundary)
+
+    (param variables {:subject String :name String}
+      :source http-body
+      :content-type :json
+      :validated-at boundary)
+
+    (returns (union
+      (ok   Notification :http 201 :serialize :json)
+      (err  :template-not-found {:name template-name} :http 404)
+      (err  :delivery-failed {:reason String} :http 502)))
+
+    (let [template (query template-store {:name template-name})]
+      (match template
+        (none)   (err :template-not-found {:name template-name})
+        (some t) (let [rendered (render-template t variables)]
+                   (match (deliver-email recipient rendered)
+                     (err reason) (err :delivery-failed {:reason reason})
+                     (ok _)       (let [notif (insert! notification-store
+                                          (build Notification {:recipient recipient
+                                                               :channel "email"
+                                                               :subject (. variables subject)
+                                                               :body rendered
+                                                               :status "sent"}))]
+                                    (ok notif)))))))
+
+  (fn get-notification-status
+    :provenance {req: "SPEC-2024-0300#status", test: ["T-410"]}
+    :effects    [notif-write]
+    :total      true
+    :latency-budget 20ms
+    :called-by  [admin-panel/notification-detail webhook-handler/delivery-status]
+
+    (param id UUID
+      :source http-path-param
+      :validated-at boundary)
+
+    (returns (union
+      (ok   Notification :http 200 :serialize :json)
+      (err  :not-found {} :http 404)))
+
+    (let [notif (query notification-store {:id id})]
+      (match notif
+        (none)   (err :not-found {})
+        (some n) (ok n)))))
