@@ -1,0 +1,99 @@
+(* AIS Language - Formal Grammar *)
+(* AI S-expressions: S-expression based language with rich metadata *)
+
+program        = { sexpr } ;
+
+sexpr          = atom
+               | list
+               | vector
+               | map ;
+
+list           = "(" { sexpr } ")" ;
+
+vector         = "[" { sexpr } "]" ;
+
+map            = "{" { map_entry } "}" ;
+
+map_entry      = sexpr sexpr ;
+
+atom           = symbol
+               | keyword
+               | string_lit
+               | int_lit
+               | float_lit
+               | bool_lit
+               | duration_lit
+               | regex_lit ;
+
+(* Identifiers: permissive, allowing hyphens, question marks, bangs, slashes *)
+symbol         = symbol_start { symbol_cont } ;
+symbol_start   = letter | "_" | "-" | "+" | "*" | "/" | "!" | "?" | ">" | "<" | "=" | "." ;
+symbol_cont    = symbol_start | digit ;
+
+(* Keywords: colon-prefixed identifiers *)
+keyword        = ":" symbol ;
+
+(* Literals *)
+string_lit     = '"' { string_char } '"' ;
+string_char    = any_char - '"' - "\\"
+               | "\\" escape_char ;
+escape_char    = '"' | "\\" | "n" | "t" | "r" ;
+
+int_lit        = [ "-" ] digit { digit } ;
+
+float_lit      = [ "-" ] digit { digit } "." digit { digit } ;
+
+bool_lit       = "true" | "false" ;
+
+(* Duration literals: number followed by time unit *)
+duration_lit   = digit { digit } duration_unit ;
+duration_unit  = "ms" | "s" | "m" | "h" ;
+
+(* Regex literals: #/pattern/ *)
+regex_lit      = "#/" { regex_char } "/" ;
+regex_char     = any_char - "/" | "\\/" ;
+
+(* Comments *)
+comment        = ";;" { any_char } newline ;
+
+(* Character classes *)
+letter         = "a".."z" | "A".."Z" ;
+digit          = "0".."9" ;
+newline        = "\n" ;
+any_char       = ? any unicode character ? ;
+
+(* ===== Semantic Forms (validated during lowering, not parsing) ===== *)
+
+(* Module declaration *)
+(* (module <name> :provenance <map> :version <int> :parent-version <int> :delta <sexpr> <decl>...) *)
+
+(* Type declaration *)
+(* (type <name> :invariants <vector> <field>...) *)
+
+(* Field declaration *)
+(* (field <name> <type> {:keyword <value>}...) *)
+
+(* Effect set declaration *)
+(* (effect-set <name> <vector>) *)
+
+(* Function declaration *)
+(* (fn <name> :provenance <map> :effects <vector> :total <bool> :latency-budget <duration> *)
+(*   :called-by <vector> :idempotency-key <sexpr> *)
+(*   <param>... <returns> <body>) *)
+
+(* Parameter declaration *)
+(* (param <name> <type-expr> {:keyword <value>}...) *)
+
+(* Returns declaration *)
+(* (returns (union <variant>...)) *)
+
+(* Union variant *)
+(* (ok <type> {:keyword <value>}...) *)
+(* (err <keyword> <map-or-type> {:keyword <value>}...) *)
+
+(* Expressions *)
+(* (let [<binding>...] <body>) *)
+(* (match <expr> <arm>...) *)
+(* (if <cond> <then> <else>) *)
+(* (<fn-name> <arg>...) *)
+(* (. <expr> <field>) *)

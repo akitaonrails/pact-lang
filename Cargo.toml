@@ -1,0 +1,10 @@
+[package]
+name = "ais-lang"
+version = "0.1.0"
+edition = "2021"
+description = "Compiler for AIS (AI S-expressions) language"
+
+[dependencies]
+# Zero dependencies for core
+
+[dev-dependencies]
