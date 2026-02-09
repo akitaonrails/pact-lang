@@ -238,7 +238,7 @@ Functions carry metadata, parameters, return types, and a body:
 
 ## Design Rationale
 
-See [LANGUAGE.pt-BR.md](../LANGUAGE.pt-BR.md) for the full design document. The core insight:
+See [LANGUAGE.pt-BR.md](doc/LANGUAGE.pt-BR.md) (Portuguese) or [LANGUAGE.md](doc/LANGUAGE.md) (English) for the full design document. The core insight:
 
 > The language ideal for AI is the one humans keep rejecting.
 
@@ -250,6 +250,9 @@ Every feature that helps an LLM reason about code — formal specs, effect track
 pact-lang/
 ├── Cargo.toml
 ├── grammar.ebnf                  # Formal EBNF grammar
+├── doc/
+│   ├── LANGUAGE.md               # Language design document (English)
+│   └── LANGUAGE.pt-BR.md         # Language design document (Portuguese)
 ├── src/
 │   ├── main.rs                   # CLI entry point
 │   ├── lib.rs                    # Module exports
