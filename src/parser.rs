@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_full_example_parses() {
         let source = std::fs::read_to_string(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/examples/user-service.ais")
+            concat!(env!("CARGO_MANIFEST_DIR"), "/examples/user-service.pct")
         ).unwrap();
         let mut lexer = Lexer::new(&source);
         let tokens = lexer.tokenize().unwrap();

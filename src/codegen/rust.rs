@@ -47,7 +47,7 @@ impl RustCodegen {
     fn emit_header(&mut self, module: &Module) {
         self.emit_line("// ============================================================");
         self.emit_line(&format!(
-            "// Generated from AIS module: {}",
+            "// Generated from Pact module: {}",
             module.name
         ));
         if let Some(v) = module.version {
@@ -808,7 +808,7 @@ mod tests {
     #[test]
     fn test_full_example() {
         let source = std::fs::read_to_string(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/examples/user-service.ais"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/examples/user-service.pct"),
         )
         .unwrap();
         let output = generate(&source);

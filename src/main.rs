@@ -2,21 +2,21 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use ais_lang::codegen::rust::RustCodegen;
-use ais_lang::diagnostics::{self, DiagnosticKind};
-use ais_lang::lexer::Lexer;
-use ais_lang::lower::Lowerer;
-use ais_lang::parser::Parser;
-use ais_lang::semantic;
+use pact_lang::codegen::rust::RustCodegen;
+use pact_lang::diagnostics::{self, DiagnosticKind};
+use pact_lang::lexer::Lexer;
+use pact_lang::lower::Lowerer;
+use pact_lang::parser::Parser;
+use pact_lang::semantic;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 || args[1] == "--help" || args[1] == "-h" {
-        eprintln!("Usage: ais-lang compile <input.ais> [-o <output-dir>]");
+        eprintln!("Usage: pact compile <input.pct> [-o <output-dir>]");
         eprintln!("");
         eprintln!("Commands:");
-        eprintln!("  compile    Parse, analyze, and generate Rust code from an AIS file");
+        eprintln!("  compile    Parse, analyze, and generate Rust code from a Pact file");
         eprintln!("  check      Parse and analyze without generating code");
         eprintln!("  parse      Parse only (show CST)");
         process::exit(if args.len() < 2 { 1 } else { 0 });
@@ -29,7 +29,7 @@ fn main() {
         "parse" => cmd_parse(&args[2..]),
         _ => {
             eprintln!("Unknown command: {}", command);
-            eprintln!("Run 'ais-lang --help' for usage");
+            eprintln!("Run 'pact --help' for usage");
             process::exit(1);
         }
     }

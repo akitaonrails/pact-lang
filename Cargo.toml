@@ -1,8 +1,8 @@
 [package]
-name = "ais-lang"
+name = "pact-lang"
 version = "0.1.0"
 edition = "2021"
-description = "Compiler for AIS (AI S-expressions) language"
+description = "Compiler for the Pact language"
 
 [dependencies]
 # Zero dependencies for core

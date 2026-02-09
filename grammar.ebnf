@@ -1,4 +1,4 @@
-(* AIS Language - Formal Grammar *)
+(* Pact Language - Formal Grammar *)
 (* AI S-expressions: S-expression based language with rich metadata *)
 
 program        = { sexpr } ;

@@ -1,12 +1,12 @@
-# ais-lang
+# pact-lang
 
-A compiler for **AIS** (AI S-expressions) — a programming language designed for AI agents, not humans.
+A compiler for **Pact** — a programming language designed for AI agents, not humans.
 
-AIS inverts the usual ratio: programs are *mostly specification, provenance, and constraints* with a thin layer of computation. The logic is the easy part. Knowing **why** something exists, **what else is affected**, and **what guarantees must hold** is where the language spends its budget.
+Pact inverts the usual ratio: programs are *mostly specification, provenance, and constraints* with a thin layer of computation. The logic is the easy part. Knowing **why** something exists, **what else is affected**, and **what guarantees must hold** is where the language spends its budget.
 
-## What is AIS?
+## What is Pact?
 
-AIS is an S-expression based language where every function carries rich, machine-readable metadata:
+Pact is an S-expression based language where every function carries rich, machine-readable metadata:
 
 ```scheme
 (fn get-user-by-id
@@ -52,14 +52,14 @@ No external dependencies. Just Rust's standard library.
 ## Usage
 
 ```bash
-# Compile an AIS file to Rust source code
-ais-lang compile examples/user-service.ais -o output/
+# Compile a Pact file to Rust source code
+pact compile examples/user-service.pct -o output/
 
 # Check for errors without generating code
-ais-lang check examples/user-service.ais
+pact check examples/user-service.pct
 
 # Parse only (show the concrete syntax tree)
-ais-lang parse examples/minimal.ais
+pact parse examples/minimal.pct
 ```
 
 ## Compiler Pipeline
@@ -67,7 +67,7 @@ ais-lang parse examples/minimal.ais
 The compiler has 6 phases:
 
 ```
-Source (.ais) → Lexer → Parser (CST) → Lowering (AST) → Semantic Analysis → Codegen (Rust)
+Source (.pct) → Lexer → Parser (CST) → Lowering (AST) → Semantic Analysis → Codegen (Rust)
 ```
 
 | Phase | What it does |
@@ -80,9 +80,9 @@ Source (.ais) → Lexer → Parser (CST) → Lowering (AST) → Semantic Analysi
 
 ## What Gets Generated
 
-Given an AIS module, the compiler produces Rust code with:
+Given a Pact module, the compiler produces Rust code with:
 
-| AIS construct | Rust output |
+| Pact construct | Rust output |
 |---------------|-------------|
 | `(type User ...)` | `pub struct User` with `validate()` method |
 | `(effect-set db-read ...)` | `pub trait DbRead` with typed methods |
@@ -93,48 +93,48 @@ Given an AIS module, the compiler produces Rust code with:
 
 ## Examples
 
-The `examples/` directory contains several AIS modules:
+The `examples/` directory contains several Pact modules:
 
-### `minimal.ais` — Starting point
+### `minimal.pct` — Starting point
 The smallest valid module. One type, one effect set, one function.
 
 ```bash
-ais-lang compile examples/minimal.ais -o output/
+pact compile examples/minimal.pct -o output/
 ```
 
-### `user-service.ais` — Canonical example
+### `user-service.pct` — Canonical example
 The reference example from the language spec. A user CRUD service with two functions (`get-user-by-id`, `create-user`), full provenance, effect tracking, and union return types.
 
 ```bash
-ais-lang compile examples/user-service.ais -o output/
+pact compile examples/user-service.pct -o output/
 ```
 
-### `auth-service.ais` — Authentication
+### `auth-service.pct` — Authentication
 Token-based authentication with session management. Demonstrates multiple effect sets (session reads/writes, user lookup, audit logging), expiration handling, and password verification flows.
 
 ```bash
-ais-lang compile examples/auth-service.ais -o output/
+pact compile examples/auth-service.pct -o output/
 ```
 
-### `inventory.ais` — Inventory management
+### `inventory.pct` — Inventory management
 Stock tracking with reservations. Multiple types (`Product`, `StockEntry`, `Reservation`), cross-type queries, quantity constraints, and write-heavy operations.
 
 ```bash
-ais-lang compile examples/inventory.ais -o output/
+pact compile examples/inventory.pct -o output/
 ```
 
-### `notification.ais` — Notifications
+### `notification.pct` — Notifications
 Multi-channel delivery with template rendering. Shows send effects (`email-gateway`, `sms-gateway`), long latency budgets (2000ms), and chained operations (render → deliver → persist).
 
 ```bash
-ais-lang compile examples/notification.ais -o output/
+pact compile examples/notification.pct -o output/
 ```
 
 ## Language Reference
 
 ### Module
 
-Every AIS file contains a single module:
+Every `.pct` file contains a single module:
 
 ```scheme
 (module module-name
@@ -242,12 +242,12 @@ See [LANGUAGE.pt-BR.md](../LANGUAGE.pt-BR.md) for the full design document. The 
 
 > The language ideal for AI is the one humans keep rejecting.
 
-Every feature that helps an LLM reason about code — formal specs, effect tracking, totality checking, rich AST manipulation, exhaustive returns — adds cognitive load for humans. AIS embraces that trade-off: it's a language where the metadata-to-logic ratio is 3:1, because knowing *why*, *what's affected*, and *what guarantees must hold* is where AI agents spend their reasoning budget.
+Every feature that helps an LLM reason about code — formal specs, effect tracking, totality checking, rich AST manipulation, exhaustive returns — adds cognitive load for humans. Pact embraces that trade-off: it's a language where the metadata-to-logic ratio is 3:1, because knowing *why*, *what's affected*, and *what guarantees must hold* is where AI agents spend their reasoning budget.
 
 ## Project Structure
 
 ```
-ais-lang/
+pact-lang/
 ├── Cargo.toml
 ├── grammar.ebnf                  # Formal EBNF grammar
 ├── src/
@@ -267,11 +267,11 @@ ais-lang/
 │       ├── mod.rs
 │       └── rust.rs               # Rust code emission (6 tests)
 └── examples/
-    ├── minimal.ais               # Smallest valid module
-    ├── user-service.ais          # Canonical example from the spec
-    ├── auth-service.ais          # Authentication & sessions
-    ├── inventory.ais             # Stock management & reservations
-    └── notification.ais          # Multi-channel notifications
+    ├── minimal.pct               # Smallest valid module
+    ├── user-service.pct          # Canonical example from the spec
+    ├── auth-service.pct          # Authentication & sessions
+    ├── inventory.pct             # Stock management & reservations
+    └── notification.pct          # Multi-channel notifications
 ```
 
 ## Tests

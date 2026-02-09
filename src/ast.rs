@@ -1,6 +1,6 @@
 use crate::lexer::{Span, DurationUnit};
 
-/// A complete AIS module
+/// A complete Pact module
 #[derive(Debug, Clone)]
 pub struct Module {
     pub name: String,
