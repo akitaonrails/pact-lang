@@ -417,5 +417,5 @@ cargo test
 
 ## Related Crates
 
-- **[pact-runtime](../pact-runtime/)** — Runtime types, `Store<T>` trait, and builtins that generated code depends on
-- **[pact-web](../pact-web/)** — Axum web application that serves generated CRUD services with HTML and JSON APIs
+- **[pact-runtime](https://github.com/akitaonrails/pact-runtime)** — Runtime types, `Store<T>` trait, and builtins that generated code depends on
+- **[pact-web](https://github.com/akitaonrails/pact-web)** — Axum web application that serves generated CRUD services with HTML and JSON APIs
