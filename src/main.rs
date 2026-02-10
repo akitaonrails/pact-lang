@@ -4,6 +4,9 @@ use std::process;
 
 use pact_lang::codegen::rust::RustCodegen;
 use pact_lang::diagnostics::{self, DiagnosticKind};
+use pact_lang::generate::yaml_parser::YamlParser;
+use pact_lang::generate::spec_parser;
+use pact_lang::generate::pct_emitter::PctEmitter;
 use pact_lang::lexer::Lexer;
 use pact_lang::lower::Lowerer;
 use pact_lang::parser::Parser;
@@ -17,6 +20,7 @@ fn main() {
         eprintln!("");
         eprintln!("Commands:");
         eprintln!("  compile    Parse, analyze, and generate Rust code from a Pact file");
+        eprintln!("  generate   Generate a .pct file from a YAML spec");
         eprintln!("  check      Parse and analyze without generating code");
         eprintln!("  parse      Parse only (show CST)");
         process::exit(if args.len() < 2 { 1 } else { 0 });
@@ -25,6 +29,7 @@ fn main() {
     let command = &args[1];
     match command.as_str() {
         "compile" => cmd_compile(&args[2..]),
+        "generate" => cmd_generate(&args[2..]),
         "check" => cmd_check(&args[2..]),
         "parse" => cmd_parse(&args[2..]),
         _ => {
@@ -202,6 +207,95 @@ fn cmd_parse(args: &[String]) {
     for (i, sexpr) in sexprs.iter().enumerate() {
         println!("Expression {}: {:#?}", i, sexpr);
     }
+}
+
+fn cmd_generate(args: &[String]) {
+    let (input_path, output_path) = parse_args(args);
+    let source = read_source(&input_path);
+
+    // Parse YAML
+    let mut yaml_parser = YamlParser::new(&source);
+    let yaml = match yaml_parser.parse() {
+        Ok(y) => y,
+        Err(e) => {
+            eprintln!("YAML parse error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Parse spec
+    let spec = match spec_parser::parse_spec(&yaml) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Spec parse error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Emit .pct
+    let pct_source = PctEmitter::new().emit(&spec);
+
+    // Validate by round-tripping through lexer → parser → lowerer
+    let mut lexer = Lexer::new(&pct_source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Generated .pct has lexer errors: {}", e);
+            eprintln!("--- generated source ---");
+            eprintln!("{}", pct_source);
+            process::exit(1);
+        }
+    };
+
+    let mut parser = Parser::new(tokens);
+    let sexprs = match parser.parse_program() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Generated .pct has parse errors: {}", e);
+            eprintln!("--- generated source ---");
+            eprintln!("{}", pct_source);
+            process::exit(1);
+        }
+    };
+
+    if sexprs.is_empty() {
+        eprintln!("Generated .pct has no top-level expressions");
+        process::exit(1);
+    }
+
+    let mut lowerer = Lowerer::new();
+    match lowerer.lower_module(&sexprs[0]) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Generated .pct has lowering errors: {}", e);
+            eprintln!("--- generated source ---");
+            eprintln!("{}", pct_source);
+            process::exit(1);
+        }
+    }
+
+    // Write output
+    let output_file = output_path.unwrap_or_else(|| {
+        let stem = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        // Strip .spec suffix if present
+        let stem = stem.strip_suffix(".spec").unwrap_or(stem);
+        PathBuf::from(format!("{}.pct", stem))
+    });
+
+    fs::write(&output_file, &pct_source).unwrap_or_else(|e| {
+        eprintln!("Failed to write output: {}", e);
+        process::exit(1);
+    });
+
+    eprintln!(
+        "Generated {} ({} bytes) from spec '{}'",
+        output_file.display(),
+        pct_source.len(),
+        spec.title
+    );
 }
 
 fn parse_args(args: &[String]) -> (PathBuf, Option<PathBuf>) {

@@ -1,0 +1,33 @@
+spec: SPEC-2024-0042
+title: "User service"
+owner: platform-team
+domain:
+  User:
+    fields:
+      - name: required, string, 1-200 chars
+      - email: required, email format, unique
+      - id: auto-generated, immutable
+endpoints:
+  get-user:
+    description: "Returns a user by ID"
+    input: user id (from URL)
+    outputs:
+      - success: the user found (200)
+      - not found: when the ID doesn't exist (404)
+    constraints:
+      - max response time: 50ms
+      - read-only
+  create-user:
+    description: "Creates a new user"
+    input: user data (from body)
+    outputs:
+      - created: the new user (201)
+      - duplicate email: email already exists (409)
+      - validation failed: invalid input (422)
+    constraints:
+      - idempotent by: email
+      - max response time: 200ms
+quality:
+  - all functions must be total
+traceability:
+  known dependencies: api-router, admin-panel

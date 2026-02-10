@@ -52,6 +52,9 @@ No external dependencies. Just Rust's standard library.
 ## Usage
 
 ```bash
+# Generate a .pct file from a YAML spec (human intent → machine format)
+pact generate examples/user-service.spec.yaml -o user-service.pct
+
 # Compile a Pact file to Rust source code
 pact compile examples/user-service.pct -o output/
 
@@ -61,6 +64,83 @@ pact check examples/user-service.pct
 # Parse only (show the concrete syntax tree)
 pact parse examples/minimal.pct
 ```
+
+## Spec-to-Pct Generator
+
+The `generate` command translates human-readable YAML specs (Layer 0 — human intent) into `.pct` files (Layer 1 — AI-native format) that feed into the compiler pipeline:
+
+```
+Spec (.yaml) → YamlParser → SpecAST → PctEmitter → .pct file → [compiler]
+```
+
+### YAML Spec Format
+
+Write requirements in plain English:
+
+```yaml
+spec: SPEC-2024-0042
+title: "User service"
+owner: platform-team
+domain:
+  User:
+    fields:
+      - name: required, string, 1-200 chars
+      - email: required, email format, unique
+      - id: auto-generated, immutable
+endpoints:
+  get-user:
+    description: "Returns a user by ID"
+    input: user id (from URL)
+    outputs:
+      - success: the user found (200)
+      - not found: when the ID doesn't exist (404)
+    constraints:
+      - max response time: 50ms
+      - read-only
+  create-user:
+    description: "Creates a new user"
+    input: user data (from body)
+    outputs:
+      - created: the new user (201)
+      - duplicate email: email already exists (409)
+      - validation failed: invalid input (422)
+    constraints:
+      - idempotent by: email
+      - max response time: 200ms
+quality:
+  - all functions must be total
+traceability:
+  known dependencies: api-router, admin-panel
+```
+
+### What Gets Mapped
+
+| Spec descriptor | Generated .pct |
+|----------------|---------------|
+| `required, string, 1-200 chars` | `(field name String :min-len 1 :max-len 200)` + invariant |
+| `email format, unique` | `(field email String :format :email :unique-within <store>)` |
+| `auto-generated, immutable` | `(field id UUID :immutable :generated)` |
+| `read-only` constraint | effect set `db-read [:reads <store>]` |
+| `max response time: 50ms` | `:latency-budget 50ms` |
+| `idempotent by: email` | `:idempotency-key (hash (. input email))` |
+| output `success (200)` | `(ok Type :http 200 :serialize :json)` |
+| output `not found (404)` | `(err :not-found {:id id} :http 404)` |
+| `all functions must be total` | `:total true` on every function |
+
+The generator also scaffolds function bodies: read endpoints get validate-query-match logic, write endpoints get validate-insert-match logic.
+
+The generated `.pct` is validated by round-tripping through lexer, parser, and lowerer before writing to disk.
+
+### Scope and Limitations
+
+The generator is designed for **service contract specifications** — CRUD endpoints, API contracts, input validation, error variants. It handles the domain well:
+
+- Domain types with field constraints
+- Read/write endpoints with HTTP status mappings
+- Effect tracking, latency budgets, idempotency keys
+- Traceability and provenance metadata
+
+It is **not** designed for algorithmic specifications (data structures, sorting algorithms, state machines). Those require language features Pact doesn't yet have: generic types, recursive types, trait bounds, and algorithmic body templates.
 
 ## Compiler Pipeline
 
@@ -254,7 +334,7 @@ pact-lang/
 │   ├── LANGUAGE.md               # Language design document (English)
 │   └── LANGUAGE.pt-BR.md         # Language design document (Portuguese)
 ├── src/
-│   ├── main.rs                   # CLI entry point
+│   ├── main.rs                   # CLI entry point (compile, generate, check, parse)
 │   ├── lib.rs                    # Module exports
 │   ├── lexer.rs                  # Tokenizer (16 tests)
 │   ├── parser.rs                 # S-expression CST parser (8 tests)
@@ -266,12 +346,21 @@ pact-lang/
 │   │   ├── resolve.rs            # Name resolution
 │   │   ├── effects.rs            # Effect checking (2 tests)
 │   │   └── totality.rs           # Match exhaustiveness (2 tests)
-│   └── codegen/
-│       ├── mod.rs
-│       └── rust.rs               # Rust code emission (6 tests)
+│   ├── codegen/
+│   │   ├── mod.rs
+│   │   └── rust.rs               # Rust code emission (6 tests)
+│   └── generate/
+│       ├── mod.rs                # Module wiring + integration tests (4 tests)
+│       ├── yaml_ast.rs           # YamlValue enum (Scalar, Mapping, Sequence)
+│       ├── yaml_parser.rs        # Indentation-based YAML subset parser (12 tests)
+│       ├── spec_ast.rs           # Typed spec structures (SpecDoc, Endpoint, etc.)
+│       ├── spec_parser.rs        # YamlValue → SpecDoc conversion (11 tests)
+│       └── pct_emitter.rs        # SpecDoc → .pct text emission (11 tests)
 └── examples/
     ├── minimal.pct               # Smallest valid module
-    ├── user-service.pct          # Canonical example from the spec
+    ├── user-service.pct          # Canonical example (hand-written)
+    ├── user-service.spec.yaml    # Example YAML spec for generate
+    ├── inventory.spec.yaml       # Inventory service spec
     ├── auth-service.pct          # Authentication & sessions
     ├── inventory.pct             # Stock management & reservations
     └── notification.pct          # Multi-channel notifications
@@ -283,4 +372,4 @@ pact-lang/
 cargo test
 ```
 
-39 tests across all phases: lexer (16), parser (8), lowering (5), semantic analysis (4), codegen (6).
+77 tests across all phases: lexer (16), parser (8), lowering (5), semantic analysis (4), codegen (6), generate (38).

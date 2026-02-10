@@ -1,0 +1,33 @@
+spec: SPEC-2024-0100
+title: "Inventory service"
+owner: warehouse-team
+domain:
+  Product:
+    fields:
+      - id: auto-generated, immutable
+      - sku: required, string, unique
+      - name: required, string, 1-100 chars
+      - quantity: required, int
+endpoints:
+  get-product:
+    description: "Look up a product by ID"
+    input: product id (from URL path)
+    outputs:
+      - success: the product (200)
+      - not found: product doesn't exist (404)
+    constraints:
+      - max response time: 30ms
+      - read-only
+  create-product:
+    description: "Add a new product to inventory"
+    input: product data (from JSON body)
+    outputs:
+      - created: the new product (201)
+      - duplicate sku: SKU already in use (409)
+      - validation failed: bad input (422)
+    constraints:
+      - max response time: 100ms
+quality:
+  - all functions must be total
+traceability:
+  known dependencies: api-gateway, warehouse-ui
