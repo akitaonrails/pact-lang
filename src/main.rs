@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process;
 
 use pact_lang::codegen::rust::RustCodegen;
+use pact_lang::codegen::rust_v2::RustV2Codegen;
 use pact_lang::diagnostics::{self, DiagnosticKind};
 use pact_lang::generate::yaml_parser::YamlParser;
 use pact_lang::generate::spec_parser;
@@ -16,13 +17,16 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 || args[1] == "--help" || args[1] == "-h" {
-        eprintln!("Usage: pact compile <input.pct> [-o <output-dir>]");
+        eprintln!("Usage: pact compile <input.pct> [-o <output-dir>] [--runtime]");
         eprintln!("");
         eprintln!("Commands:");
         eprintln!("  compile    Parse, analyze, and generate Rust code from a Pact file");
         eprintln!("  generate   Generate a .pct file from a YAML spec");
         eprintln!("  check      Parse and analyze without generating code");
         eprintln!("  parse      Parse only (show CST)");
+        eprintln!("");
+        eprintln!("Flags:");
+        eprintln!("  --runtime  Generate code targeting pact-runtime crate");
         process::exit(if args.len() < 2 { 1 } else { 0 });
     }
 
@@ -41,7 +45,7 @@ fn main() {
 }
 
 fn cmd_compile(args: &[String]) {
-    let (input_path, output_dir) = parse_args(args);
+    let (input_path, output_dir, use_runtime) = parse_compile_args(args);
     let source = read_source(&input_path);
 
     // Lex
@@ -99,7 +103,11 @@ fn cmd_compile(args: &[String]) {
     }
 
     // Code generation
-    let rust_code = RustCodegen::new().generate(&module);
+    let rust_code = if use_runtime {
+        RustV2Codegen::new().generate(&module)
+    } else {
+        RustCodegen::new().generate(&module)
+    };
 
     // Write output
     let output_dir = output_dir.unwrap_or_else(|| PathBuf::from("output"));
@@ -296,6 +304,40 @@ fn cmd_generate(args: &[String]) {
         pct_source.len(),
         spec.title
     );
+}
+
+fn parse_compile_args(args: &[String]) -> (PathBuf, Option<PathBuf>, bool) {
+    let mut input: Option<PathBuf> = None;
+    let mut output = None;
+    let mut use_runtime = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                if i < args.len() {
+                    output = Some(PathBuf::from(&args[i]));
+                }
+            }
+            "--runtime" => {
+                use_runtime = true;
+            }
+            _ => {
+                if input.is_none() {
+                    input = Some(PathBuf::from(&args[i]));
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let input = input.unwrap_or_else(|| {
+        eprintln!("Expected input file path");
+        process::exit(1);
+    });
+
+    (input, output, use_runtime)
 }
 
 fn parse_args(args: &[String]) -> (PathBuf, Option<PathBuf>) {

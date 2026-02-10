@@ -58,12 +58,34 @@ pact generate examples/user-service.spec.yaml -o user-service.pct
 # Compile a Pact file to Rust source code
 pact compile examples/user-service.pct -o output/
 
+# Compile targeting pact-runtime (produces code that compiles against pact-runtime crate)
+pact compile --runtime examples/user-service.pct -o output/
+
 # Check for errors without generating code
 pact check examples/user-service.pct
 
 # Parse only (show the concrete syntax tree)
 pact parse examples/minimal.pct
 ```
+
+### Codegen backends
+
+The compiler ships two codegen backends:
+
+| Backend | Flag | Output | Use case |
+|---------|------|--------|----------|
+| **v1** (`rust.rs`) | *(default)* | Standalone Rust with trait-based effects | Inspection, documentation |
+| **v2** (`rust_v2.rs`) | `--runtime` | Rust targeting `pact-runtime` crate | Compilable, runnable applications |
+
+The `--runtime` backend produces Rust that compiles against `pact-runtime` and can be used directly in applications like `pact-web`. It handles:
+
+- `use pact_runtime::prelude::*;` imports
+- `#[derive(Serialize, Deserialize)]` on structs
+- Named input structs for map-typed parameters (e.g., `CreateUserInput`)
+- Named fields in error enum variants (not inline structs)
+- `Store<T>` trait bounds instead of per-store effect traits
+- Builtin mapping (`query` → `store.query_by_id()`, `insert!` → `store.insert()`, etc.)
+- `HasId`, `HasUniqueFields`, `from_input()`, `validate_input()` implementations
 
 ## Spec-to-Pct Generator
 
@@ -160,6 +182,8 @@ Source (.pct) → Lexer → Parser (CST) → Lowering (AST) → Semantic Analysi
 
 ## What Gets Generated
 
+### v1 backend (default)
+
 Given a Pact module, the compiler produces Rust code with:
 
 | Pact construct | Rust output |
@@ -170,6 +194,22 @@ Given a Pact module, the compiler produces Rust code with:
 | `(returns (union ...))` | `pub enum GetUserResult` with `http_status()` and `Display` |
 | `:provenance`, `:called-by`, etc. | Doc comments preserving all metadata |
 | `:invariants`, `:min-len`, `:max-len` | Validation logic in `validate()` |
+
+### v2 backend (`--runtime`)
+
+The runtime-targeting backend produces code that compiles and runs:
+
+| Pact construct | Rust output |
+|---------------|-------------|
+| `(type User ...)` | `pub struct User` with `HasId`, `HasUniqueFields`, `validate()`, `validate_input()`, `from_input()` |
+| `(param input {:name String})` | `pub struct CreateUserInput` (named struct) |
+| `(effect-set db-read ...)` | `Store<User>` trait bound on function |
+| `(fn get-user ...)` | `pub fn get_user(store: &impl Store<User>, ...)` |
+| `(err :not-found {:id id})` | `NotFound { id: String }` (named fields) |
+| `(query store {:id uuid})` | `store.query_by_id(&uuid)` |
+| `(insert! store (build User input))` | `store.insert(User::from_input(input.clone()))` |
+| `(validate-against User input)` | `User::validate_input(&input)` |
+| `(non-empty? errors)` | `non_empty(&errors)` |
 
 ## Examples
 
@@ -348,7 +388,8 @@ pact-lang/
 │   │   └── totality.rs           # Match exhaustiveness (2 tests)
 │   ├── codegen/
 │   │   ├── mod.rs
-│   │   └── rust.rs               # Rust code emission (6 tests)
+│   │   ├── rust.rs               # Rust v1 code emission (6 tests)
+│   │   └── rust_v2.rs            # Rust v2 codegen targeting pact-runtime (11 tests)
 │   └── generate/
 │       ├── mod.rs                # Module wiring + integration tests (4 tests)
 │       ├── yaml_ast.rs           # YamlValue enum (Scalar, Mapping, Sequence)
@@ -372,4 +413,9 @@ pact-lang/
 cargo test
 ```
 
-77 tests across all phases: lexer (16), parser (8), lowering (5), semantic analysis (4), codegen (6), generate (38).
+88 tests across all phases: lexer (16), parser (8), lowering (5), semantic analysis (4), codegen v1 (6), codegen v2 (11), generate (38).
+
+## Related Crates
+
+- **[pact-runtime](../pact-runtime/)** — Runtime types, `Store<T>` trait, and builtins that generated code depends on
+- **[pact-web](../pact-web/)** — Axum web application that serves generated CRUD services with HTML and JSON APIs
