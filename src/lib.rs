@@ -6,3 +6,4 @@ pub mod semantic;
 pub mod codegen;
 pub mod diagnostics;
 pub mod generate;
+pub mod scaffold;

@@ -61,6 +61,9 @@ pact compile examples/user-service.pct -o output/
 # Compile targeting pact-runtime (produces code that compiles against pact-runtime crate)
 pact compile --runtime examples/user-service.pct -o output/
 
+# Scaffold an Axum web project from a Pact file
+pact scaffold examples/user-service.pct -o ../user-service-web/
+
 # Check for errors without generating code
 pact check examples/user-service.pct
 
@@ -86,6 +89,57 @@ The `--runtime` backend produces Rust that compiles against `pact-runtime` and c
 - `Store<T>` trait bounds instead of per-store effect traits
 - Builtin mapping (`query` → `store.query_by_id()`, `insert!` → `store.insert()`, etc.)
 - `HasId`, `HasUniqueFields`, `from_input()`, `validate_input()` implementations
+
+## Web Project Scaffolding
+
+The `scaffold` command generates a complete Axum web project from a `.pct` file — routes, handlers, HTML templates, and Cargo.toml. This is a **one-time generation** intended as a starting point that you customize afterward.
+
+```bash
+# 1. Scaffold the web project
+pact scaffold examples/user-service.pct -o ../user-service-web/
+
+# 2. Generate the domain code into it
+pact compile --runtime examples/user-service.pct -o ../user-service-web/src/generated/
+
+# 3. Build and run
+cd ../user-service-web && cargo run
+```
+
+This produces:
+
+```
+user-service-web/
+├── Cargo.toml              # Dependencies (axum, tokio, serde, pact-runtime)
+└── src/
+    ├── main.rs             # AppState, Router with HTML + JSON API routes
+    ├── handlers.rs         # HTML handlers (list, show, create, delete) + JSON API handlers
+    ├── html.rs             # Tailwind CSS HTML helpers (page, nav, table, form, alert)
+    └── generated/
+        └── mod.rs          # "pub mod user_service;"
+```
+
+### Route inference
+
+Routes are inferred from the AST — no configuration needed:
+
+| AST signal | Generated route |
+|------------|----------------|
+| `EffectKind::Reads/Writes` on a store | `GET /{plural}` (list), `GET /{plural}/new` (form), `POST /{plural}/{id}/delete` |
+| `FnDef` with UUID `:source http-path-param` + reads-only | `GET /{plural}/{id}` (show) + `GET /api/{plural}/{id}` |
+| `FnDef` with Map `:source http-body` + writes | `POST /{plural}` (create) + `POST /api/{plural}` |
+| `FieldDef` `:format :email` | `<input type="email">` in forms |
+| `FieldDef` `:min-len`, `:max-len` | `minlength`/`maxlength` attributes |
+| `Variant` `:http 404` | `StatusCode::NOT_FOUND` in match arms |
+
+### Generated handler patterns
+
+The generated handlers follow the same patterns as the hand-written `pact-web`:
+
+- **List** — `store.list_all()` → HTML table with Tailwind styling
+- **Show** — calls domain function → matches Ok/Err variants with correct HTTP status codes
+- **Create (HTML)** — `Form<CreateTypeForm>` → calls domain function → redirect on success, error alert on failure
+- **Create (API)** — `Json<CreateTypeInput>` → calls domain function → JSON response with status
+- **Delete** — `store.delete(&uuid)` → redirect to list
 
 ## Spec-to-Pct Generator
 
@@ -374,7 +428,7 @@ pact-lang/
 │   ├── LANGUAGE.md               # Language design document (English)
 │   └── LANGUAGE.pt-BR.md         # Language design document (Portuguese)
 ├── src/
-│   ├── main.rs                   # CLI entry point (compile, generate, check, parse)
+│   ├── main.rs                   # CLI entry point (compile, generate, scaffold, check, parse)
 │   ├── lib.rs                    # Module exports
 │   ├── lexer.rs                  # Tokenizer (16 tests)
 │   ├── parser.rs                 # S-expression CST parser (8 tests)
@@ -390,13 +444,20 @@ pact-lang/
 │   │   ├── mod.rs
 │   │   ├── rust.rs               # Rust v1 code emission (6 tests)
 │   │   └── rust_v2.rs            # Rust v2 codegen targeting pact-runtime (11 tests)
-│   └── generate/
-│       ├── mod.rs                # Module wiring + integration tests (4 tests)
-│       ├── yaml_ast.rs           # YamlValue enum (Scalar, Mapping, Sequence)
-│       ├── yaml_parser.rs        # Indentation-based YAML subset parser (12 tests)
-│       ├── spec_ast.rs           # Typed spec structures (SpecDoc, Endpoint, etc.)
-│       ├── spec_parser.rs        # YamlValue → SpecDoc conversion (11 tests)
-│       └── pct_emitter.rs        # SpecDoc → .pct text emission (11 tests)
+│   ├── generate/
+│   │   ├── mod.rs                # Module wiring + integration tests (4 tests)
+│   │   ├── yaml_ast.rs           # YamlValue enum (Scalar, Mapping, Sequence)
+│   │   ├── yaml_parser.rs        # Indentation-based YAML subset parser (12 tests)
+│   │   ├── spec_ast.rs           # Typed spec structures (SpecDoc, Endpoint, etc.)
+│   │   ├── spec_parser.rs        # YamlValue → SpecDoc conversion (11 tests)
+│   │   └── pct_emitter.rs        # SpecDoc → .pct text emission (11 tests)
+│   └── scaffold/
+│       ├── mod.rs                # Orchestration + integration tests (4 tests)
+│       ├── route_analysis.rs     # AST → RouteTable intermediate representation (7 tests)
+│       ├── main_emitter.rs       # Generates main.rs (AppState, Router) (4 tests)
+│       ├── handlers_emitter.rs   # Generates handlers.rs (HTML + JSON) (8 tests)
+│       ├── html_emitter.rs       # Generates html.rs (Tailwind helpers) (3 tests)
+│       └── cargo_emitter.rs      # Generates Cargo.toml (2 tests)
 └── examples/
     ├── minimal.pct               # Smallest valid module
     ├── user-service.pct          # Canonical example (hand-written)
@@ -413,7 +474,7 @@ pact-lang/
 cargo test
 ```
 
-88 tests across all phases: lexer (16), parser (8), lowering (5), semantic analysis (4), codegen v1 (6), codegen v2 (11), generate (38).
+117 tests across all phases: lexer (16), parser (8), lowering (5), semantic analysis (4), codegen v1 (6), codegen v2 (11), generate (38), scaffold (29). Plus 8 tests in the `pact-runtime` crate.
 
 ## Related Crates
 

@@ -22,6 +22,7 @@ fn main() {
         eprintln!("Commands:");
         eprintln!("  compile    Parse, analyze, and generate Rust code from a Pact file");
         eprintln!("  generate   Generate a .pct file from a YAML spec");
+        eprintln!("  scaffold   Generate an Axum web project from a Pact file");
         eprintln!("  check      Parse and analyze without generating code");
         eprintln!("  parse      Parse only (show CST)");
         eprintln!("");
@@ -34,6 +35,7 @@ fn main() {
     match command.as_str() {
         "compile" => cmd_compile(&args[2..]),
         "generate" => cmd_generate(&args[2..]),
+        "scaffold" => cmd_scaffold(&args[2..]),
         "check" => cmd_check(&args[2..]),
         "parse" => cmd_parse(&args[2..]),
         _ => {
@@ -123,6 +125,90 @@ fn cmd_compile(args: &[String]) {
     });
 
     eprintln!("Generated {} ({} bytes)", output_file.display(), rust_code.len());
+}
+
+fn cmd_scaffold(args: &[String]) {
+    let (input_path, output_dir) = parse_args(args);
+    let source = read_source(&input_path);
+
+    // Lex
+    let mut lexer = Lexer::new(&source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Lexer error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Parse
+    let mut parser = Parser::new(tokens);
+    let sexprs = match parser.parse_program() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    if sexprs.is_empty() {
+        eprintln!("No top-level expressions found");
+        process::exit(1);
+    }
+
+    // Lower
+    let mut lowerer = Lowerer::new();
+    let module = match lowerer.lower_module(&sexprs[0]) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("Lowering error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Print lowering warnings
+    if !lowerer.diagnostics.is_empty() {
+        let formatted = diagnostics::format_diagnostics(&source, &lowerer.diagnostics);
+        eprint!("{}", formatted);
+    }
+
+    // Semantic analysis
+    let diags = semantic::analyze(&module);
+    if !diags.is_empty() {
+        let formatted = diagnostics::format_diagnostics(&source, &diags);
+        eprint!("{}", formatted);
+
+        let error_count = diags.iter().filter(|d| d.kind == DiagnosticKind::Error).count();
+        if error_count > 0 {
+            eprintln!("{} error(s) found. Aborting scaffold.", error_count);
+            process::exit(1);
+        }
+    }
+
+    // Scaffold
+    let scaffold_output = pact_lang::scaffold::scaffold(&module);
+
+    // Write output
+    let output_dir = output_dir.unwrap_or_else(|| {
+        let stem = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        PathBuf::from(format!("{}-web", stem.replace(".pct", "")))
+    });
+
+    eprintln!("Scaffolding web project to {}", output_dir.display());
+
+    if let Err(e) = pact_lang::scaffold::write_scaffold(&scaffold_output, &output_dir) {
+        eprintln!("Scaffold error: {}", e);
+        process::exit(1);
+    }
+
+    eprintln!("Done! Next steps:");
+    eprintln!("  1. Generate domain code: pact compile --runtime {} -o {}/src/generated/",
+        input_path.display(), output_dir.display());
+    eprintln!("  2. Build: cd {} && cargo build", output_dir.display());
+    eprintln!("  3. Run:   cd {} && cargo run", output_dir.display());
 }
 
 fn cmd_check(args: &[String]) {
